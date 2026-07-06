@@ -2,10 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyChannel, notifyPersonal } from "@/lib/telegram";
 import type { MinRole, Role } from "@/lib/supabase/types";
+
+function appUrl(path: string) {
+  return `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}${path}`;
+}
 
 function parseOptionalInt(value: FormDataEntryValue | null) {
   if (!value || value === "") return null;
@@ -83,14 +88,17 @@ export async function setCaseStatus(
   if (error) throw new Error(error.message);
 
   if (status === "published" && item) {
-    void notifyChannel(
-      `Опубликовано новое дело «${item.title}».` +
-        (item.fee_min_rub || item.fee_max_rub
-          ? ` Вилка: ${item.fee_min_rub ?? "?"}–${item.fee_max_rub ?? "?"} ₽.`
-          : "") +
-        (item.respond_until
-          ? ` Отклики до ${new Date(item.respond_until).toLocaleString("ru-RU")}.`
-          : ""),
+    after(() =>
+      notifyChannel(
+        `Опубликовано новое дело «${item.title}».` +
+          (item.fee_min_rub || item.fee_max_rub
+            ? ` Вилка: ${item.fee_min_rub ?? "?"}–${item.fee_max_rub ?? "?"} ₽.`
+            : "") +
+          (item.respond_until
+            ? ` Отклики до ${new Date(item.respond_until).toLocaleString("ru-RU")}.`
+            : "") +
+          ` ${appUrl(`/cases/${caseId}`)}`,
+      ),
     );
   }
 
@@ -125,16 +133,18 @@ export async function assignCase(
     .eq("id", caseId)
     .maybeSingle();
 
-  if (item) {
-    void notifyChannel(`Дело «${item.title}» назначено исполнителю.`);
-  }
-  void notifyPersonal(executorId, `Вам назначено дело «${item?.title ?? ""}».`);
-  if (supervisorId) {
-    void notifyPersonal(
-      supervisorId,
-      `Вы назначены супервизором по делу «${item?.title ?? ""}».`,
-    );
-  }
+  after(() => {
+    if (item) {
+      void notifyChannel(`Дело «${item.title}» назначено исполнителю.`);
+    }
+    void notifyPersonal(executorId, `Вам назначено дело «${item?.title ?? ""}».`);
+    if (supervisorId) {
+      void notifyPersonal(
+        supervisorId,
+        `Вы назначены супервизором по делу «${item?.title ?? ""}».`,
+      );
+    }
+  });
 
   revalidatePath("/admin");
   revalidatePath(`/admin/cases/${caseId}`);
@@ -172,11 +182,13 @@ export async function closeCaseAction(input: {
       .eq("id", assignment.case_id)
       .maybeSingle();
 
-    void notifyChannel(`Дело «${item?.title ?? ""}» закрыто. Оценка клиента: ${input.score}/5.`);
-    void notifyPersonal(
-      assignment.executor_id,
-      `Дело «${item?.title ?? ""}» закрыто с оценкой ${input.score}/5. Списано с зачёта: ${data.charged_rub} ₽.`,
-    );
+    after(() => {
+      void notifyChannel(`Дело «${item?.title ?? ""}» закрыто. Оценка клиента: ${input.score}/5.`);
+      void notifyPersonal(
+        assignment.executor_id,
+        `Дело «${item?.title ?? ""}» закрыто с оценкой ${input.score}/5. Списано с зачёта: ${data.charged_rub} ₽.`,
+      );
+    });
   }
 
   revalidatePath("/admin");
@@ -229,7 +241,7 @@ export async function grantCreditAction(profileId: string) {
     p_profile_id: profileId,
   });
   if (error) throw new Error(error.message);
-  void notifyPersonal(profileId, "Вам начислен зачёт стоимости обучения.");
+  after(() => notifyPersonal(profileId, "Вам начислен зачёт стоимости обучения."));
   revalidatePath("/admin/users");
   revalidatePath("/me");
 }

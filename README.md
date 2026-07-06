@@ -1,36 +1,49 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Лига AI-Юристов
 
-## Getting Started
+Закрытая биржа юридических дел для сертифицированных выпускников курса «AI-Юрист».
+Полное ТЗ — в [`CLAUDE.md`](./CLAUDE.md).
 
-First, run the development server:
+Стек: Next.js (App Router, TypeScript) + Tailwind + shadcn/ui + Supabase (Postgres, Auth, RLS).
+
+## Настройка Supabase-проекта
+
+1. Создайте проект на [supabase.com](https://supabase.com) (или поднимите локально через `npx supabase start`, если у вас есть Docker).
+2. Примените миграции из `supabase/migrations/*.sql` по порядку (через SQL-редактор проекта, `supabase db push`, либо `supabase db reset` локально).
+3. (Опционально, для демо) выполните `supabase/seed.sql` — заведёт 1 admin, 1 трек, 3 специалистов, 1 партнёра, 2 опубликованных дела и 1 закрытое с применённым зачётом.
+4. Скопируйте `.env.local.example` в `.env.local` и заполните:
+   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` — из Settings → API проекта.
+   - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHANNEL_CHAT_ID` — если нужны уведомления в Telegram.
+   - `NEXT_PUBLIC_APP_URL` — публичный URL приложения (для ссылок в уведомлениях).
+5. Настоящих участников заводите через `/admin/users` → «Пригласить участника» (magic link уходит на реальную почту) — сид нужен только чтобы сразу увидеть наполненный интерфейс.
+
+## Разработка
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev       # http://localhost:3000
+npm run lint
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Тесты RLS и бизнес-функций
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Тесты (pgTAP) проверяют матрицу доступа из `CLAUDE.md` п.5 и функцию `apply_credit` из п.6.
+Требуют локальный PostgreSQL 16 + расширение `pgtap` (Docker в этой среде разработки недоступен,
+поэтому тесты гоняются напрямую на postgres с шимом `auth.uid()`/ролей `anon`/`authenticated`,
+без полного стека GoTrue/PostgREST):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+sudo apt-get install -y postgresql-16 postgresql-16-pgtap
+npm run test:db
+```
 
-## Learn More
+Ожидаемый результат — `ВСЕ ТЕСТЫ ЗЕЛЁНЫЕ`.
 
-To learn more about Next.js, take a look at the following resources:
+## Структура
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `supabase/migrations/` — схема, RLS-политики, бизнес-функции (`apply_credit`, `grant_credit`, `close_case`).
+- `supabase/tests/` — pgTAP-тесты и шим окружения Supabase для локального прогона без Docker.
+- `supabase/seed.sql` — демо-данные для пилота.
+- `src/app/` — страницы: `/login`, `/cases`, `/cases/[id]`, `/me`, `/registry`, `/admin/*`.
+- `src/lib/supabase/` — клиенты Supabase (browser/server/admin) и обновление сессии.
+- `src/lib/telegram.ts` — уведомления в канал Лиги и участникам.

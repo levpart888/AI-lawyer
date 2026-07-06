@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { notifyPersonal, notifyChannel } from "@/lib/telegram";
 
 export async function respondToCase(caseId: string, comment: string) {
   const supabase = await createClient();
@@ -26,16 +25,6 @@ export async function respondToCase(caseId: string, comment: string) {
 
   revalidatePath("/cases");
   revalidatePath(`/cases/${caseId}`);
-
-  const { data: caseRow } = await supabase
-    .from("cases")
-    .select("title")
-    .eq("id", caseId)
-    .maybeSingle();
-  if (caseRow) {
-    void notifyChannel(`Новый отклик на дело «${caseRow.title}»`);
-  }
-  void notifyPersonal(user.id, "Ваш отклик отправлен администратору.");
 
   return { error: null };
 }
